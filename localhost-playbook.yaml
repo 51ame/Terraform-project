@@ -1,0 +1,25 @@
+- name: "Local-ansible"
+  hosts: all
+  become: yes
+
+  tasks:
+  - name: Delete SecretProviderClass
+    shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/SecretProviderClass.yaml"
+  - name: Delete Deployment
+    shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/Deployment.yaml"
+  - name: Delete HPA
+    shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/HPA.yaml"
+  
+  - name: Delete repo folder
+    shell: "sudo rm -R /home/ubuntu/PlaysDev-Final"
+    ignore_errors: yes
+
+  - name: Clone new repo from git
+    shell: "git clone https://github.com/51ame/PlaysDev-Final.git"
+
+  - name: Create new SecretProviderClass
+    shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/SecretProviderClass.yaml"
+  - name: Create new Deployment
+    shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/Deployment.yaml"
+  - name: Create new HPA
+    shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/HPA.yaml"

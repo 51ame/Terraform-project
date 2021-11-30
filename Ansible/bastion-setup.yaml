@@ -1,0 +1,176 @@
+---
+- name: Bastion-setup
+  hosts: bastion
+  become: yes
+  vars_files:
+  - vars-newkey.yaml
+
+  tasks:
+  - name: create aws dir
+    shell: "mkdir /home/ubuntu/.aws/"
+  - name: create config
+    shell:
+      cmd: |
+        cat >> /home/ubuntu/.aws/config <<EOF
+        [default]
+        region = {{ region }}
+        EOF
+  - name: create credentials
+    shell:
+      cmd: |
+        cat >> /home/ubuntu/.aws/credentials <<EOF
+        [default]
+        aws_access_key_id = {{ key_id }}
+        aws_secret_access_key = {{ access_key }}
+        EOF
+
+  - name: Upgrade all apt packages
+    apt: upgrade=dist force_apt_get=yes
+
+  - name: Install software-properties-common
+    apt:
+      name: software-properties-common
+      state: latest
+    
+  - name:  Add ansible repo
+    apt_repository:
+      repo: ppa:ansible/ansible
+      state: present
+  - name: Install ansible
+    apt: 
+      name: ansible  
+      state: latest
+
+  - name: Install Unzip
+    apt:
+      name: unzip
+      state: latest
+
+  - name: Download AWS CLI V2
+    shell: 'curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"'
+  - name: Unzip file AWS CLI V2
+    shell: "unzip awscliv2.zip"
+  - name: Install AWS CLI V2
+    shell: "./aws/install"
+    ignore_errors: yes
+
+    
+  - name: Download kubectl
+    shell: "curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl"
+  - name: Chmod for kubectl  
+    shell: "chmod +x ./kubectl"
+  - name: Install kubectl 
+    shell: "mv ./kubectl /usr/local/bin/kubectl"
+
+  - name: Add an apt signing key for Docker
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+
+  - name: Add apt repository for stable version
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+      state: present
+
+  - name: Install Docker
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - docker-ce
+      - docker-ce-cli 
+      - containerd.io
+    
+  - name: Install Java 11
+    apt:
+      name: "{{ packages }}"
+      state: present
+    vars:
+      packages:
+      - openjdk-11-jdk
+
+  - name: Install Jenkins apt repository key
+    apt_key: url=https://pkg.jenkins.io/debian-stable/jenkins.io.key state=present
+  - name: Configure Jenkins repo
+    apt_repository: repo='deb https://pkg.jenkins.io/debian-stable binary/' state=present
+  - name: Install Jenkins
+    apt: name=jenkins update_cache=yes
+    
+  - name: Delete old repo folder
+    shell: "rm -R /home/ubuntu/PlaysDev-Final"
+    ignore_errors: yes
+    
+  - name: Clone repo from git
+    shell: "git clone https://github.com/51ame/PlaysDev-Final.git"
+  - name: Chown PlaysDev-Final
+    shell: "chown -R ubuntu:ubuntu /home/ubuntu/PlaysDev-Final"
+
+  - name: Unzip Jenkins backup
+    shell: "sudo unzip /home/ubuntu/PlaysDev-Final/FULL-2021-11-29_09-41.zip"
+  - name: chown dir to jenkins
+    shell: "chown -R jenkins:jenkins /home/ubuntu/FULL-2021-11-29_09-41"
+  - name: mv backup dir into jenkins directory
+    shell: "mv /home/ubuntu/FULL-2021-11-29_09-41 /var/lib/jenkins"
+
+  - name: Create ansible-playbook dir
+    shell: "mkdir /var/lib/jenkins/ansible-playbook"
+  - name: Create ansible-playbook
+    shell: 
+      cmd: |
+        cat >> /var/lib/jenkins/ansible-playbook/git-jenkins-cluster-playbook.yaml <<EOF
+        - name: "Local-ansible"
+          hosts: all
+          become: yes
+
+          tasks:
+          - name: Delete SecretProviderClass
+            shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/SecretProviderClass.yaml"
+          - name: Delete Deployment
+            shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/Deployment.yaml"
+          - name: Delete HPA
+            shell: "kubectl delete -f /home/ubuntu/PlaysDev-Final/Cluster/HPA.yaml"
+          
+          - name: Delete repo folder
+            shell: "sudo rm -R /home/ubuntu/PlaysDev-Final"
+            ignore_errors: yes
+
+          - name: Clone new repo from git
+            shell: "git clone https://github.com/51ame/PlaysDev-Final.git"
+
+          - name: Create new HPA
+            shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/HPA.yaml"
+          - name: Create new SecretProviderClass
+            shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/SecretProviderClass.yaml"
+          - name: Create new Deployment
+            shell: "kubectl create -f /home/ubuntu/PlaysDev-Final/Cluster/Deployment.yaml"
+        EOF
+  - name: Change owner ansible-playbook
+    shell: "chown -R jenkins:jenkins /var/lib/jenkins/ansible-playbook/"
+  
+  - name: Create ssh dir
+    shell: "mkdir /var/lib/jenkins/.ssh/"
+  - name: Create 51ame-newkey-frankfurt.pem
+    shell: 
+      cmd: |
+        cat >> /var/lib/jenkins/.ssh/51ame-newkey-frankfurt.pem <<EOF
+        -----BEGIN RSA PRIVATE KEY-----
+        {{ private_key }}
+        -----END RSA PRIVATE KEY-----
+        EOF
+  - name: Change owner of key file
+    shell: "chown jenkins:jenkins /var/lib/jenkins/.ssh/51ame-newkey-frankfurt.pem"
+  - name: Change key file permissions
+    shell: "chmod 400 /var/lib/jenkins/.ssh/51ame-newkey-frankfurt.pem"
+
+  - name: Install helm
+    shell: "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+
+  - name: Install eksctl
+    shell: 'curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp'
+  - name: Activate eksctl
+    shell: "sudo mv /tmp/eksctl /usr/local/bin"
+
+  - name: Pull docker image from ECR
+    shell: "docker pull public.ecr.aws/s4z6a2u8/custom-ubuntu-nginx:latest"

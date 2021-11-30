@@ -1,0 +1,65 @@
+---
+#----------------------------------Configuring server---------------------------------------
+- name: Wireguard-Setup
+  hosts: wireguard
+  become: yes
+  vars_files:
+  - vars-newkey.yaml
+
+  tasks:
+  - name: create aws dir
+    shell: "mkdir /home/ubuntu/.aws/"
+  - name: create config
+    shell:
+      cmd: |
+        cat >> /home/ubuntu/.aws/config <<EOF
+        [default]
+        region = {{ region }}
+        EOF
+  - name: create credentials
+    shell:
+      cmd: |
+        cat >> /home/ubuntu/.aws/credentials <<EOF
+        [default]
+        aws_access_key_id = {{ key_id }}
+        aws_secret_access_key = {{ access_key }}
+        EOF
+
+  - name: Upgrade all apt packages
+    apt: upgrade=dist force_apt_get=yes
+
+  - name: Install Unzip
+    apt:
+      name: unzip
+      state: latest
+
+  - name: Download AWS CLI V2
+    shell: 'curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"'
+  - name: Unzip file AWS CLI V2
+    shell: "unzip awscliv2.zip"
+  - name: Install AWS CLI V2
+    shell: "./aws/install"
+    ignore_errors: yes
+
+  - name: Delete repo folder
+    shell: "rm -R /home/ubuntu/PlaysDev-Final"
+    ignore_errors: yes
+    
+  - name: Clone repo from git
+    shell: "git clone https://github.com/51ame/PlaysDev-Final.git"
+
+#---------------------------------------Configuring Wireguard--------------------------------------
+  - name: Install Wireguard
+    shell: sh /home/ubuntu/PlaysDev-Final/install-wireguard.sh
+    become_user: ubuntu
+  - name: Getting QR-code
+    shell: qrencode -t ansiutf8 < /etc/wireguard/client.conf
+    register: out
+  - name: Getting client file
+    shell: "cat /etc/wireguard/client.conf"
+    register: wireguard
+
+
+  - debug: var=out.stdout_lines
+  - debug: var=wireguard.stdout_lines
+  
